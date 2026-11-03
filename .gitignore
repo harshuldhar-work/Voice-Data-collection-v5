@@ -1,0 +1,7 @@
+node_modules/
+.vercel
+.DS_Store
+collected_v5/
+unzipped_v5/
+pulled_manifest_v5.txt
+.env*

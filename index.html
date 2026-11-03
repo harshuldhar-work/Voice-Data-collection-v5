@@ -1,0 +1,582 @@
+<title>Voice Command Recorder</title>
+<meta name="description" content="Record a few short voice commands to help train an on-device fitness voice model.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  :root{
+    --bg:#13161b; --surface:#1c2027; --surface2:#242a33; --line:#2f3742;
+    --ink:#eef1f4; --muted:#98a4b0; --accent:#ffb020; --rec:#ff4d4f; --ok:#3dd68c;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    min-height:100dvh; display:flex; justify-content:center;
+    padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
+  }
+  .wrap{width:100%; max-width:520px; display:flex; flex-direction:column; gap:20px}
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .brand{display:flex; align-items:center; gap:9px; font-weight:650; letter-spacing:.01em}
+  .dot{width:11px; height:11px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px rgba(255,176,32,.15)}
+  .count{font-family:var(--mono); font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums}
+  .bar{height:5px; background:var(--surface2); border-radius:99px; overflow:hidden}
+  .bar>i{display:block; height:100%; width:0; background:var(--accent); border-radius:99px; transition:width .35s cubic-bezier(.2,.7,.2,1)}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:26px 22px; display:flex; flex-direction:column; gap:18px}
+  h1{font-size:1.5rem; line-height:1.2; margin:0; text-wrap:balance; letter-spacing:-.01em}
+  p{margin:0; color:var(--muted)}
+  .lede{color:var(--muted)}
+  label.field{display:flex; flex-direction:column; gap:7px; font-size:.82rem; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:600}
+  input[type=text]{
+    font:inherit; font-size:1.05rem; color:var(--ink); background:var(--surface2);
+    border:1px solid var(--line); border-radius:11px; padding:13px 14px; width:100%;
+  }
+  input[type=text]::placeholder{color:#5f6b78}
+  input[type=text]:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-color:transparent}
+
+  fieldset.modes{border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+  fieldset.modes legend{font-size:.82rem; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:600; margin-bottom:7px; padding:0}
+  .mode{display:flex; gap:12px; align-items:flex-start; background:var(--surface2); border:1px solid var(--line); border-radius:12px; padding:13px 14px; cursor:pointer}
+  .mode input{margin-top:4px; accent-color:var(--accent); flex:none}
+  .mode b{display:block; font-weight:620; color:var(--ink)}
+  .mode span{display:block; font-size:.88rem; color:var(--muted)}
+  .mode:has(input:checked){border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.07)}
+  .mode:has(input:focus-visible){outline:2px solid var(--accent); outline-offset:1px}
+
+  button{font:inherit; cursor:pointer; border:0; border-radius:12px}
+  .btn{background:var(--accent); color:#20160a; font-weight:680; font-size:1.02rem; padding:15px 18px; width:100%; letter-spacing:.01em}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line); font-weight:600}
+  .btn:disabled{opacity:.4; cursor:not-allowed}
+  .btn.ok{background:var(--ok); color:#06281a}
+  button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+
+  .kind{align-self:flex-start; font-family:var(--mono); font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+    padding:4px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted)}
+  .kind.cmd{color:var(--accent); border-color:rgba(255,176,32,.4)}
+  .kind.neg{color:#8ab4ff; border-color:rgba(138,180,255,.35)}
+  .say{font-size:2rem; line-height:1.12; font-weight:720; letter-spacing:-.02em; text-wrap:balance; margin:2px 0}
+  .hint{color:var(--muted); display:flex; gap:9px; align-items:flex-start}
+  .hint svg{flex:none; margin-top:3px}
+
+  .meter{height:56px; background:var(--surface2); border-radius:12px; border:1px solid var(--line); overflow:hidden; position:relative}
+  .meter canvas{width:100%; height:100%; display:block}
+  .meter .idle{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#5f6b78; font-size:.85rem; gap:8px}
+
+  .recbtn{display:flex; align-items:center; justify-content:center; gap:11px; height:60px; border-radius:14px;
+    background:var(--surface2); border:1px solid var(--line); color:var(--ink); font-weight:650; font-size:1.05rem; width:100%}
+  .recbtn .glyph{width:20px; height:20px; border-radius:50%; background:var(--rec); transition:.18s}
+  .recbtn.live{border-color:var(--rec); color:var(--rec)}
+  .recbtn.live .glyph{border-radius:4px; transform:scale(.8); animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){ .recbtn.live .glyph{animation:none} .bar>i{transition:none} .eq i{animation:none; height:55%} }
+
+  .row{display:flex; gap:10px}
+  .row>*{flex:1}
+  audio{width:100%; margin-top:2px; filter:invert(.9) hue-rotate(180deg)}
+  .status{display:flex; align-items:center; gap:8px; font-size:.9rem; color:var(--ok); font-weight:600}
+  .foot{font-size:.82rem; color:#6b7784; text-align:center; text-wrap:balance}
+  .err{background:rgba(255,77,79,.1); border:1px solid rgba(255,77,79,.4); color:#ffb3b4; padding:12px 14px; border-radius:11px; font-size:.9rem}
+  .note{background:rgba(255,176,32,.09); border:1px solid rgba(255,176,32,.45); color:#ffdfa0; padding:13px 15px; border-radius:12px; font-size:.92rem; display:flex; flex-direction:column; gap:10px}
+  .note button{align-self:flex-start}
+  .eq{display:flex; gap:5px; align-items:flex-end; height:40px}
+  .eq i{flex:1; max-width:9px; background:linear-gradient(180deg,#ffd27a,var(--accent)); border-radius:4px; height:22%; animation:eq 1.05s ease-in-out infinite}
+  .eq i:nth-child(2){animation-delay:.12s} .eq i:nth-child(3){animation-delay:.24s} .eq i:nth-child(4){animation-delay:.36s}
+  .eq i:nth-child(5){animation-delay:.28s} .eq i:nth-child(6){animation-delay:.16s} .eq i:nth-child(7){animation-delay:.06s}
+  @keyframes eq{0%,100%{height:22%} 50%{height:100%}}
+  .hidden{display:none !important}
+  .big{font-size:2.4rem; font-weight:740; letter-spacing:-.02em}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="dot"></span> Voice Command Recorder</div>
+    <div class="count" id="count"></div>
+  </header>
+  <div class="bar"><i id="prog"></i></div>
+
+  <!-- INTAKE -->
+  <section class="card" id="s-intake">
+    <div class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1>Lend your voice, about 4 to 5 minutes</h1>
+    <p class="lede">Say a handful of short fitness commands. It records right in your browser and sends them back automatically. Nothing to install.</p>
+    <div class="note hidden" id="appbanner">
+      <span><b>Best in your browser.</b> You've opened this inside an app. For the smoothest run (reliable mic + auto-send), tap the <b>&#8943;</b> menu and choose <b>Open in Browser</b> (Safari&nbsp;/&nbsp;Chrome).</span>
+      <button class="btn ghost" id="copylink">Copy link to open in browser</button>
+    </div>
+    <label class="field">Your first name or initials
+      <input type="text" id="name" placeholder="e.g. Ravi" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <fieldset class="modes">
+      <legend>Have you recorded for us before?</legend>
+      <label class="mode"><input type="radio" name="mode" value="returning">
+        <div><b>Yes, I recorded the earlier commands</b><span>Please use the same name as last time, and the same phone or laptop if you can. You'll record the new commands.</span></div></label>
+      <label class="mode"><input type="radio" name="mode" value="newcomer">
+        <div><b>No, this is my first time</b><span>You'll record the full set of commands.</span></div></label>
+    </fieldset>
+    <p class="foot">Best in a quiet-ish room, phone or laptop held normally. Your natural accent and pace is exactly what helps.</p>
+    <button class="btn" id="begin" disabled>Allow microphone &amp; start</button>
+    <div class="err hidden" id="micerr"></div>
+  </section>
+
+  <!-- RECORD -->
+  <section class="card hidden" id="s-record">
+    <span class="kind" id="kind">Command</span>
+    <div class="say" id="say">start workout</div>
+    <p class="hint" id="hint"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v3.4M8 4.8h.01" stroke-linecap="round"/></svg><span id="hinttxt"></span></p>
+
+    <div class="meter"><canvas id="wave" width="600" height="112"></canvas><div class="idle" id="idle">mic ready, tap record and speak</div></div>
+
+    <button class="recbtn" id="rec"><span class="glyph"></span><span id="reclabel">Record</span></button>
+
+    <audio id="play" class="hidden" controls></audio>
+    <div class="row hidden" id="review">
+      <button class="btn ghost" id="redo">Redo</button>
+      <button class="btn ok" id="next">Keep &amp; next →</button>
+    </div>
+  </section>
+
+  <!-- DONE -->
+  <section class="card hidden" id="s-done">
+    <div class="status"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.2 3.2L13 5" stroke-linecap="round" stroke-linejoin="round"/></svg> All <span id="nclips">0</span> clips recorded</div>
+    <h1>Thank you, <span id="donen" class="big" style="color:var(--accent)"></span>!</h1>
+    <p class="lede" id="sendstate">Saving your recordings…</p>
+    <div id="fallback" class="hidden" style="display:flex; flex-direction:column; gap:14px">
+      <div class="err hidden" id="webnote">You're in an in-app browser (like Lark), where saving files usually doesn't work. Tap the <b>⋯</b> menu → <b>Open in browser</b> (Safari / Chrome), reopen this link and finish again. It saves automatically there.</div>
+      <button class="btn" id="retry">Try saving again</button>
+      <button class="btn ghost" id="download">Download instead (.zip)</button>
+      <p class="foot">Or email the downloaded file to <strong>harshul.dhar@nexxbase.com</strong>.</p>
+    </div>
+    <button class="btn ghost hidden" id="again">Record again from the start</button>
+  </section>
+</div>
+
+<!-- CORE: pure logic, no DOM access (unit-tested in test/test_core.mjs). -->
+<script id="core">
+"use strict";
+// v5 command set. Data is stored per PHRASE (one folder per phrase); intents are mapped in training.
+const PHRASES = {
+  start_running:         "start running",
+  start_workout:         "start workout",
+  start_training:        "start training",
+  start_walking:         "start walking",
+  start_cycling:         "start cycling",
+  start_swimming:        "start swimming",
+  start_indoor_workout:  "start indoor workout",
+  pause_workout:         "pause workout",
+  resume_workout:        "resume workout",
+  continue_workout:      "continue workout",
+  stop_workout:          "stop workout",
+  end_workout:           "end workout",
+  start_running_workout: "start running workout",   // legacy 3-word form; anchor take only
+};
+// Takes per phrase: 3 for phrases with a close-sounding neighbour, 2 otherwise.
+//   start walking ~ start workout ("w..k" onset), start training ~ start running ("-ning"),
+//   start workout ~ stop workout (first word decides), end workout ~ (start) indoor workout ("en"/"in").
+// Returning speakers already gave 4 takes of every old phrase, so they record the NEW phrases plus ONE
+// "anchor" take of each old phrase in this session (so old and new phrases share session conditions and the
+// model cannot use "which session was this" as a shortcut).
+const PLAN = {
+  returning: {
+    takes: { start_walking:3, start_training:3, start_running:3, end_workout:3,
+             start_cycling:2, start_swimming:2, resume_workout:2, continue_workout:2 },
+    anchors: ["start_workout", "stop_workout", "pause_workout", "start_indoor_workout", "start_running_workout"],
+  },
+  newcomer: {
+    takes: { start_walking:3, start_workout:3, start_training:3, start_running:3, stop_workout:3, end_workout:3,
+             start_cycling:2, start_swimming:2, start_indoor_workout:2, pause_workout:2,
+             resume_workout:2, continue_workout:2 },
+    anchors: [],
+  },
+};
+// Each round asks for a different delivery so repeated takes are genuinely different.
+const ROUNDS = [
+  { tag: "r1", hint: "Say it naturally, the way you'd talk to your watch.", dur: 3.0 },
+  { tag: "r2", hint: "Say it a little slower and clearer.",                  dur: 3.5 },
+  { tag: "r3", hint: "Say it quickly, like you're in the middle of a run.",   dur: 3.0 },
+];
+// Negatives (research R4 section 5): complete phrases that share a word with a real command and then go somewhere
+// else, i.e. what users will actually say and the band must silently reject. Each speaker records NEG_PER_SPEAKER of
+// them, rotated through the pool (seeded by name) so the corpus covers all of them, interleaved with the commands
+// (not all at the end, so "unknown" is not tied to the end of the session). The free sentence closes the session;
+// free speech must avoid command words (a command word inside a negative teaches the model to reject commands).
+const NEG_POOL = [
+  ["neg_start_yoga", "start yoga"], ["neg_start_rowing", "start rowing"], ["neg_start_dancing", "start dancing"],
+  ["neg_start_jogging", "start jogging"], ["neg_start_hiking", "start hiking"], ["neg_start_intervals", "start intervals"],
+  ["neg_start_outdoor_workout", "start outdoor workout"], ["neg_start_working", "start working"],
+  ["neg_post_workout", "post workout"], ["neg_pause_music", "pause music"], ["neg_stop_music", "stop music"],
+  ["neg_stop_timer", "stop timer"], ["neg_end_call", "end call"], ["neg_resume_music", "resume music"],
+  ["neg_continue_reading", "continue reading"],
+];
+const NEG_PER_SPEAKER = 5;
+const NEG_HINT = "Not one of our commands. Just say it naturally.";
+const NEG_FREE = ["neg_free", "(say any sentence about your day)",
+  "About 4 seconds, anything natural. Please avoid these words: start, stop, pause, resume, continue, end, workout, running, walking, training, cycling, swimming.", 5.0];
+// Capture chain (decision D4, research R4 section 6): every take is saved TWICE from the same buffer. The primary
+// file is anti-aliased ("aa", like the board's band-limited PDM path); the twin "<file>__legacy.wav" is byte-for-byte
+// the original collector's resampler (plain 3:1 decimation on 48 kHz devices). Training mixes the two, so aliasing
+// stays label- and session-independent, and the pairs measure the alias effect on real captures.
+const CHAIN = "aa+legacy";
+function twinKey(key) { return key.replace(/\.wav$/, "__legacy.wav"); }
+
+function seededRng(str) {                       // deterministic per speaker, so an order can be reproduced
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  if (h === 0) h = 0x9e3779b9;
+  return () => { h ^= h << 13; h >>>= 0; h ^= h >>> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
+}
+function shuffle(a, rnd) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function buildPrompts(mode, name) {
+  const plan = PLAN[mode]; if (!plan) throw new Error("unknown mode " + mode);
+  const rnd = seededRng(name + "|" + mode), out = [];
+  for (let r = 1; r <= ROUNDS.length; r++) {
+    const R = ROUNDS[r - 1];
+    let round = Object.keys(plan.takes).filter(l => plan.takes[l] >= r)
+      .map(l => ({ kind: "cmd", label: l, say: PHRASES[l], tag: R.tag, hint: R.hint, dur: R.dur }));
+    if (r === 1) round = round.concat(plan.anchors.map(l => ({ kind: "cmd", label: l, say: PHRASES[l], tag: "anchor", hint: ROUNDS[0].hint, dur: 3.0 })));
+    shuffle(round, rnd);
+    // never two takes of the same phrase back to back across a round boundary
+    if (out.length && round.length > 1 && round[0].label === out[out.length - 1].label) [round[0], round[1]] = [round[1], round[0]];
+    out.push(...round);
+  }
+  const negs = shuffle(NEG_POOL.slice(), seededRng(name + "|neg")).slice(0, NEG_PER_SPEAKER);
+  for (const [tag, say] of negs) {                  // interleave; never first, so the session starts with a command
+    out.splice(1 + Math.floor(rnd() * out.length), 0, { kind: "neg", label: "unknown", say, tag, hint: NEG_HINT, dur: 3.0 });
+  }
+  const [ft, fs, fh, fd] = NEG_FREE;
+  out.push({ kind: "neg", label: "unknown", say: fs, tag: ft, hint: fh, dur: fd });
+  return out;
+}
+function clipKey(p, name) { return `${p.label}/real_${name}_v5_${p.tag}.wav`; }
+
+function resampleLegacy(f32, sr) {               // IDENTICAL to the original collector
+  if (sr === 16000) return f32;
+  const ratio = sr / 16000, n = Math.max(1, Math.floor(f32.length / ratio)), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i * ratio, i0 = x | 0, fr = x - i0; out[i] = f32[i0] * (1 - fr) + ((f32[i0 + 1] || 0) * fr); }
+  return out;
+}
+function resampleAA(f32, sr) {                   // windowed-sinc (Blackman) low-pass at <= 7 kHz, unity DC gain
+  if (sr === 16000) return f32;
+  const ratio = sr / 16000, n = Math.max(1, Math.floor(f32.length / ratio)), out = new Float32Array(n);
+  const fc = Math.min(7000, 0.45 * sr) / sr;     // cutoff in cycles per INPUT sample
+  const W = Math.max(16, Math.ceil(16 * ratio)); // half-width in input samples
+  for (let i = 0; i < n; i++) {
+    const x = i * ratio, k0 = Math.floor(x);
+    let acc = 0, wsum = 0;
+    for (let k = k0 - W + 1; k <= k0 + W; k++) {
+      if (k < 0 || k >= f32.length) continue;
+      const d = x - k; if (Math.abs(d) >= W) continue;
+      const t = 2 * fc * d, s = t === 0 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t);
+      const w = 0.42 + 0.5 * Math.cos(Math.PI * d / W) + 0.08 * Math.cos(2 * Math.PI * d / W);
+      acc += f32[k] * s * w; wsum += s * w;
+    }
+    out[i] = wsum !== 0 ? acc / wsum : 0;
+  }
+  return out;
+}
+function diffDb(a, b) {                          // energy of (a-b) relative to b, in dB
+  const n = Math.min(a.length, b.length); let e = 0, r = 0;
+  for (let i = 0; i < n; i++) { const d = a[i] - b[i]; e += d * d; r += b[i] * b[i]; }
+  return r > 0 && e > 0 ? Math.round(1000 * 10 * Math.log10(e / r)) / 1000 : null;
+}
+function peakNormalize(f32) {                    // IDENTICAL to the original: peak 0.95, gain capped at 12x
+  let pk = 0; for (let i = 0; i < f32.length; i++) { const a = Math.abs(f32[i]); if (a > pk) pk = a; }
+  let g = 1; if (pk > 0.01) { g = Math.min(12, 0.95 / pk); for (let i = 0; i < f32.length; i++) f32[i] *= g; }
+  return g;
+}
+// Capture edges. In the original collector 170 of 2,188 real command clips ended mid-word (Stop tapped while still
+// speaking, the audio buffer in flight discarded, or the auto-stop firing mid-word) and 47 started mid-word (signal
+// QC 2026-11-02). Fix: keep the last PRE_ROLL_S of mic audio from before the tap, keep recording POST_ROLL_S after
+// Stop, and extend the auto-stop in EXT_STEP_S steps (up to EXT_MAX_S) while speech is still going.
+const PRE_ROLL_S = 0.30, POST_ROLL_S = 0.35, EXT_STEP_S = 0.25, EXT_MAX_S = 1.0, ACTIVE_REL_DB = -25;
+function ringPush(ring, chunk, maxSamples) {     // keep only the most recent >= maxSamples of audio (pre-roll)
+  ring.push(chunk);
+  let n = 0; for (const c of ring) n += c.length;
+  while (ring.length > 1 && n - ring[0].length >= maxSamples) n -= ring.shift().length;
+  return ring;
+}
+function tailActive(chunks, sr, winS = 0.25, relDb = ACTIVE_REL_DB) {
+  // true when the last winS of audio is within relDb of the loudest 32 ms frame, i.e. the speaker is still talking
+  let n = 0; for (const c of chunks) n += c.length;
+  const F = Math.round(0.032 * sr), T = Math.round(winS * sr); if (n < F) return false;
+  const x = new Float32Array(n); let o = 0; for (const c of chunks) { x.set(c, o); o += c.length; }
+  const db = (a, b) => { let e = 0; for (let i = a; i < b; i++) e += x[i] * x[i]; return 10 * Math.log10(e / Math.max(1, b - a) + 1e-12); };
+  let ref = -120; for (let a = 0; a + F <= n; a += F) ref = Math.max(ref, db(a, a + F));
+  return ref > -60 && db(Math.max(0, n - T), n) > ref + relDb;
+}
+function encodeWav(f32) {
+  const n = f32.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); ws(8, "WAVE"); ws(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); ws(36, "data"); v.setUint32(40, n * 2, true);
+  let o = 44; for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, f32[i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true); o += 2; }
+  return new Uint8Array(buf);
+}
+// minimal STORED zip with CRC32 (no external libs; CSP-safe) - same as the original
+const CRCT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = (c >>> 8) ^ CRCT[(c ^ b[i]) & 0xFF]; return (c ^ 0xFFFFFFFF) >>> 0; }
+function cat(arrs) { let n = 0; for (const a of arrs) n += a.length; const o = new Uint8Array(n); let p = 0; for (const a of arrs) { o.set(a, p); p += a.length; } return o; }
+const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
+const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255]);
+function makeZip(files) {
+  const enc = new TextEncoder(); const parts = [], central = []; let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), d = f.data, crc = crc32(d);
+    const lh = cat([u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(d.length), u32(d.length), u16(nm.length), u16(0), nm]);
+    parts.push(lh, d);
+    central.push(cat([u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(d.length), u32(d.length), u16(nm.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(off), nm]));
+    off += lh.length + d.length;
+  }
+  const cd = cat(central);
+  const eocd = cat([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cd.length), u32(off), u16(0)]);
+  return new Blob([cat(parts), cd, eocd], { type: "application/zip" });
+}
+// Upload parts. The capture edges add ~0.65 s per clip (up to 1.65 s with auto-stop extensions), so a full
+// newcomer session can exceed the 4.5 MB Vercel function body limit. Sessions are split into parts of at most
+// MAX_PART_BYTES; every part carries its own meta.json, so each part is usable on its own.
+const MAX_PART_BYTES = 4.0e6;
+function zipSize(files) {                         // exact size of makeZip(files): stored entries, no extra fields
+  const enc = new TextEncoder(); let s = 22;
+  for (const f of files) s += 76 + 2 * enc.encode(f.name).length + f.data.length;
+  return s;
+}
+function splitParts(units, metaFor, maxBytes = MAX_PART_BYTES) {
+  // greedy, keeps order. A unit is an array of files that must land in the same part (a take and its legacy twin).
+  // metaFor(files) -> the bytes of that part's meta.json. Returns an array of parts, each a flat array of files.
+  const parts = []; let cur = [];
+  const fits = arr => zipSize(arr.concat([{ name: "meta.json", data: metaFor(arr) }])) <= maxBytes;
+  for (const u of units) {
+    if (cur.length && !fits(cur.concat(u))) { parts.push(cur); cur = []; }
+    cur = cur.concat(u);
+    if (!fits(cur)) throw new Error("one take does not fit in an upload part: " + u.map(f => f.name).join(", "));
+  }
+  if (cur.length) parts.push(cur);
+  return parts;
+}
+</script>
+
+<!-- UI wiring -->
+<script>
+"use strict";
+let name = "", mode = "", PROMPTS = [], idx = 0, clips = {}, meta = null, audioCtx, stream, source, processor, srcRate;
+let recording = false, chunks = [], autostop = null, lastWav = null, lastTwin = null, lastUrl = null, lastMeta = null;
+let ring = [], playing = false, stopping = false, stopReason = "", extS = 0, preRollN = 0, tStart = 0;
+const $ = id => document.getElementById(id);
+
+// ---------- level meter ----------
+const cv = $("wave"), cx = cv.getContext("2d"); let peaks = [];
+function drawMeter(rms) {
+  peaks.push(Math.min(1, rms * 4)); if (peaks.length > 120) peaks.shift();
+  cx.clearRect(0, 0, cv.width, cv.height);
+  const w = cv.width, h = cv.height, bw = w / 120;
+  cx.fillStyle = recording ? "#ff4d4f" : "#3a4453";
+  for (let i = 0; i < peaks.length; i++) { const bh = Math.max(2, peaks[i] * h * 0.9); cx.fillRect(i * bw, (h - bh) / 2, bw * 0.7, bh); }
+}
+
+// ---------- mic (same constraints as the original: echoCancellation ON is what normalizes mobile mic level) ----------
+async function initMic() {
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  srcRate = audioCtx.sampleRate;
+  source = audioCtx.createMediaStreamSource(stream);
+  processor = audioCtx.createScriptProcessor(2048, 1, 1);
+  const mute = audioCtx.createGain(); mute.gain.value = 0;
+  processor.onaudioprocess = e => {
+    const d = e.inputBuffer.getChannelData(0);
+    let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+    drawMeter(Math.sqrt(s / d.length));
+    const c = new Float32Array(d);
+    if (recording) chunks.push(c);
+    else if (!playing) ringPush(ring, c, Math.round(PRE_ROLL_S * srcRate));   // pre-roll, never during playback
+    else ring = [];
+  };
+  source.connect(processor); processor.connect(mute); mute.connect(audioCtx.destination);
+}
+
+// ---------- flow ----------
+function show(id) { ["s-intake", "s-record", "s-done"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
+function renderProgress() {
+  const N = PROMPTS.length;
+  $("count").textContent = N ? (idx < N ? `${idx + 1} / ${N}` : `${N} / ${N}`) : "";
+  $("prog").style.width = N ? (100 * idx / N) + "%" : "0%";
+}
+function renderPrompt() {
+  const p = PROMPTS[idx]; renderProgress();
+  $("kind").textContent = p.kind === "cmd" ? "Command" : "Not a command";
+  $("kind").className = "kind " + (p.kind === "cmd" ? "cmd" : "neg");
+  $("say").textContent = p.say;
+  $("hinttxt").textContent = p.hint;
+  $("play").classList.add("hidden"); $("review").classList.add("hidden");
+  $("rec").classList.remove("hidden"); $("idle").style.display = "flex"; $("idle").textContent = "mic ready, tap record and speak";
+  peaks = []; drawMeter(0);
+}
+function startRec() {
+  const p = PROMPTS[idx];
+  const pl = $("play"); if (!pl.paused) { pl.pause(); ring = []; }      // never let the last take's playback leak in
+  chunks = ring.slice(); preRollN = 0; for (const c of chunks) preRollN += c.length; ring = [];
+  recording = true; stopping = false; stopReason = ""; extS = 0; tStart = performance.now();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  $("rec").classList.add("live"); $("reclabel").textContent = "Stop";
+  $("idle").style.display = "none";
+  autostop = setTimeout(() => requestStop("auto"), Math.round(p.dur * 1000));
+}
+function requestStop(reason) {
+  if (!recording || stopping) return;
+  if (reason === "tap" && performance.now() - tStart < 250) {            // accidental double tap: discard
+    recording = false; clearTimeout(autostop); chunks = [];
+    $("rec").classList.remove("live"); $("reclabel").textContent = "Record";
+    $("idle").style.display = "flex"; $("idle").textContent = "that was very short, tap record and speak"; return;
+  }
+  if (reason === "auto" && extS < EXT_MAX_S - 1e-9 && tailActive(chunks, srcRate)) {   // still talking: wait
+    extS += EXT_STEP_S; autostop = setTimeout(() => requestStop("auto"), Math.round(EXT_STEP_S * 1000)); return;
+  }
+  stopping = true; stopReason = reason; clearTimeout(autostop);
+  $("reclabel").textContent = "Finishing"; $("rec").disabled = true;
+  setTimeout(stopRec, Math.round(POST_ROLL_S * 1000));                  // keep the tail of the last word
+}
+function stopRec() {
+  if (!recording) return; recording = false; stopping = false; clearTimeout(autostop);
+  $("rec").disabled = false; $("rec").classList.remove("live"); $("reclabel").textContent = "Record";
+  let len = 0; for (const c of chunks) len += c.length;
+  const merged = new Float32Array(len); let o = 0; for (const c of chunks) { merged.set(c, o); o += c.length; }
+  const endActive = tailActive(chunks, srcRate, 0.1);                   // still talking even after the post-roll?
+  const gain = peakNormalize(merged);
+  const legacy = resampleLegacy(merged, srcRate), aa = resampleAA(merged, srcRate);
+  lastWav = encodeWav(aa); lastTwin = encodeWav(legacy);                  // primary (anti-aliased) + legacy twin
+  const p = PROMPTS[idx];
+  lastMeta = { file: clipKey(p, name), twin: twinKey(clipKey(p, name)), label: p.label, phrase: p.say, tag: p.tag, kind: p.kind,
+               dur_s: Math.round(1000 * aa.length / 16000) / 1000, peak_gain: Math.round(gain * 1000) / 1000,
+               legacy_vs_aa_diff_db: diffDb(legacy, aa),
+               pre_roll_s: Math.round(1000 * preRollN / srcRate) / 1000, post_roll_s: POST_ROLL_S,
+               stop: stopReason, auto_ext_s: extS, end_active: endActive };
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = URL.createObjectURL(new Blob([lastWav], { type: "audio/wav" }));
+  const a = $("play"); a.src = lastUrl; a.classList.remove("hidden");
+  $("rec").classList.add("hidden"); $("review").classList.remove("hidden");
+}
+function keepNext() {
+  const p = PROMPTS[idx];
+  clips[clipKey(p, name)] = lastWav; clips[twinKey(clipKey(p, name))] = lastTwin;
+  meta.clips = meta.clips.filter(c => c.file !== lastMeta.file); meta.clips.push(lastMeta);
+  idx++;
+  if (idx >= PROMPTS.length) { finish(); } else { renderPrompt(); }
+}
+const UA = navigator.userAgent || "";
+const inApp = /Lark|Feishu|MicroMessenger|WeChat|WhatsApp|Instagram|FBAN|FBAV|Line\/|Snapchat|Telegram/i.test(UA);
+let finalZip = null, finalParts = null, partsDone = [], sessionId = "";
+function buildZip() {                             // one zip with everything: only for the local download fallback
+  const files = Object.keys(clips).map(nm => ({ name: nm, data: clips[nm] }));
+  meta.finishedAt = meta.finishedAt || new Date().toISOString();
+  files.push({ name: "meta.json", data: new TextEncoder().encode(JSON.stringify(meta, null, 1)) });
+  return makeZip(files);
+}
+function buildParts() {
+  const units = Object.keys(clips).filter(nm => !nm.endsWith("__legacy.wav"))       // a take + its twin stay together
+    .map(nm => [{ name: nm, data: clips[nm] }].concat(clips[twinKey(nm)] ? [{ name: twinKey(nm), data: clips[twinKey(nm)] }] : []));
+  meta.finishedAt = new Date().toISOString();
+  const enc = new TextEncoder();
+  const metaFor = (arr, i = 99, n = 99) => enc.encode(JSON.stringify({ ...meta, part: i, parts: n, partClips: arr.map(f => f.name) }, null, 1));
+  const groups = splitParts(units, arr => metaFor(arr));
+  return groups.map((g, k) => makeZip(g.concat([{ name: "meta.json", data: metaFor(g, k + 1, groups.length) }])));
+}
+async function trySend() {
+  $("sendstate").textContent = "Saving your recordings…"; $("sendstate").style.color = "var(--muted)";
+  $("fallback").classList.add("hidden");
+  try {
+    for (let k = 0; k < finalParts.length; k++) {
+      if (partsDone[k]) continue;                 // a retry resumes from the first part that did not land
+      if (finalParts.length > 1) $("sendstate").textContent = `Saving your recordings (part ${k + 1} of ${finalParts.length})…`;
+      const q = "/api/upload?name=" + encodeURIComponent(name) + "&mode=" + encodeURIComponent(mode) +
+                "&session=" + sessionId + "&part=" + (k + 1) + "&parts=" + finalParts.length;
+      const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/zip" }, body: finalParts[k] });
+      let j = {}; try { j = await r.json(); } catch (_) {}
+      if (!r.ok || !j.confirmed) throw new Error((j.error || ("HTTP " + r.status)) + (j.hint ? " (" + j.hint + ")" : ""));
+      partsDone[k] = true;
+    }
+    $("sendstate").innerHTML = "&#10003; All done. Your recordings are saved and you can close this page. Thank you!";
+    $("sendstate").style.color = "var(--ok)";
+    $("again").classList.remove("hidden");
+  } catch (e) {
+    console.error("auto-save failed:", e);
+    $("sendstate").innerHTML = "We couldn't save it automatically. Please use an option below.";
+    $("sendstate").style.color = "var(--accent)";
+    $("fallback").classList.remove("hidden");
+    $("webnote").classList.toggle("hidden", !inApp);
+    $("again").classList.remove("hidden");
+  }
+}
+async function finish() {
+  renderProgress(); $("donen").textContent = name; $("nclips").textContent = Object.keys(clips).filter(k => !k.endsWith("__legacy.wav")).length; show("s-done");
+  finalParts = buildParts(); partsDone = finalParts.map(() => false); finalZip = null;
+  await trySend();
+}
+function startSession() {
+  idx = 0; clips = {};
+  PROMPTS = buildPrompts(mode, name);
+  let track = null;
+  try {                                                // what the browser actually applied (constraints are best-effort)
+    const tr = stream.getAudioTracks()[0], st = tr.getSettings();
+    track = { label: String(tr.label || "").slice(0, 60), sampleRate: st.sampleRate, channelCount: st.channelCount,
+              echoCancellation: st.echoCancellation, autoGainControl: st.autoGainControl,
+              noiseSuppression: st.noiseSuppression, latency: st.latency };
+  } catch (_) {}
+  sessionId = Math.random().toString(36).slice(2, 8).padEnd(6, "0");
+  finalParts = null; partsDone = []; finalZip = null;
+  meta = { schema: "v5-collector-2", name, mode, session: sessionId, chain: CHAIN, srcRate, userAgent: UA, track,
+           capture: { pre_roll_s: PRE_ROLL_S, post_roll_s: POST_ROLL_S, ext_step_s: EXT_STEP_S, ext_max_s: EXT_MAX_S },
+           startedAt: new Date().toISOString(), finishedAt: null, nPrompts: PROMPTS.length, clips: [] };
+  show("s-record"); renderPrompt();
+}
+
+// ---------- events ----------
+function readyToBegin() {
+  const v = $("name").value.trim().replace(/[^A-Za-z0-9]/g, "");
+  const m = document.querySelector('input[name="mode"]:checked');
+  $("begin").disabled = !(v && m);
+}
+$("name").addEventListener("input", readyToBegin);
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", readyToBegin));
+$("begin").onclick = async () => {
+  const v = $("name").value.trim().replace(/[^A-Za-z0-9]/g, "").slice(0, 20);
+  const m = document.querySelector('input[name="mode"]:checked');
+  if (!v) { $("name").focus(); return; }
+  if (!m) return;
+  name = v.toLowerCase(); mode = m.value;
+  $("begin").disabled = true; $("begin").textContent = "Starting microphone…";
+  try { await initMic(); }
+  catch (err) {
+    $("micerr").classList.remove("hidden");
+    $("micerr").textContent = "Couldn't access the microphone. Allow mic access for this page (check the address-bar icon or Settings), then reload. Error: " + (err && err.name || err);
+    $("begin").disabled = false; $("begin").textContent = "Allow microphone & start"; return;
+  }
+  startSession();
+};
+$("rec").onclick = () => recording ? requestStop("tap") : startRec();
+$("play").addEventListener("play", () => { playing = true; ring = []; });
+["pause", "ended"].forEach(ev => $("play").addEventListener(ev, () => { playing = false; ring = []; }));
+$("redo").onclick = () => renderPrompt();
+$("next").onclick = () => keepNext();
+$("retry").onclick = () => trySend();
+$("download").onclick = () => {
+  finalZip = finalZip || buildZip();
+  const url = URL.createObjectURL(finalZip);
+  const a = document.createElement("a"); a.href = url; a.download = "kws-v5-samples-" + name + ".zip"; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  if (inApp) { setTimeout(() => { try { window.open(url, "_blank"); } catch (_) {} }, 250); }
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+};
+$("again").onclick = () => startSession();
+$("name").addEventListener("keydown", e => { if (e.key === "Enter" && !$("begin").disabled) $("begin").click(); });
+if (inApp) $("appbanner").classList.remove("hidden");
+$("copylink").onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); $("copylink").textContent = "✓ Copied. Paste it in Safari / Chrome"; }
+  catch (_) { window.prompt("Copy this link, then open it in your browser:", location.href); }
+};
+renderProgress();
+</script>

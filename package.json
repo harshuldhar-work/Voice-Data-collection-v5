@@ -1,0 +1,11 @@
+{
+  "name": "voice-data-collection-v5",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "v5 in-browser voice-command collector for the Apollo330P KWS model (12-phrase command set). Records 16 kHz mono WAVs, auto-labels them, uploads to Vercel Blob under recordings_v5/ (download+email fallback).",
+  "scripts": { "test": "node test/test_core.mjs" },
+  "dependencies": {
+    "@vercel/blob": "^2.6.1"
+  }
+}
